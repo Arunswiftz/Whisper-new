@@ -25,6 +25,82 @@ function isSafeUrl(value) {
     return true;
 }
 
+
+async function resolveApplePodcastsEpisode(url) {
+    const parsed = new URL(url);
+    if (!parsed.hostname.toLowerCase().endsWith("podcasts.apple.com")) return null;
+
+    const match = parsed.pathname.match(/\/id(\d+)/i);
+    const episodeId = parsed.searchParams.get("i");
+    if (!match || !episodeId) {
+        throw new Error("Apple Podcasts links must point to a specific episode and include the ?i= episode ID.");
+    }
+
+    const showId = match[1];
+    const apiUrl = "https://itunes.apple.com/lookup?id=" + encodeURIComponent(showId) +
+        "&entity=podcastEpisode&limit=200&country=" + encodeURIComponent((parsed.pathname.match(/^\/([a-z]{2})\//i)?.[1] || "us"));
+
+    const response = await fetch(apiUrl, {
+        headers: { "User-Agent": "Whisper-new/1.0" }
+    });
+    if (!response.ok) throw new Error("Apple's podcast metadata service returned HTTP " + response.status + ".");
+
+    const data = await response.json();
+    const episode = (data.results || []).find(item =>
+        String(item.trackId || "") === String(episodeId)
+    );
+
+    if (!episode) {
+        throw new Error("The Apple Podcasts episode was not found in Apple's recent episode metadata.");
+    }
+
+    const audioUrl = episode.episodeUrl;
+    if (!audioUrl) {
+        throw new Error("Apple returned the episode metadata, but no direct audio URL was available.");
+    }
+
+    return {
+        audioUrl,
+        title: episode.trackName || "Apple Podcasts episode",
+        duration: Number(episode.trackTimeMillis || 0) / 1000
+    };
+}
+
+async function downloadDirectAudio(url, outputPath) {
+    const response = await fetch(url, {
+        headers: {
+            "User-Agent": "Mozilla/5.0 (compatible; Whisper-new/1.0)"
+        },
+        redirect: "follow"
+    });
+    if (!response.ok) throw new Error("Audio host returned HTTP " + response.status + ".");
+    const contentLength = Number(response.headers.get("content-length") || 0);
+    if (contentLength > MAX_DOWNLOAD_BYTES) throw new Error("The source audio exceeds the 250 MB server limit.");
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length || buffer.length > MAX_DOWNLOAD_BYTES) {
+        throw new Error("The downloaded audio is empty or exceeds the 250 MB server limit.");
+    }
+    fs.writeFileSync(outputPath + ".source", buffer);
+    await convertToWav(outputPath + ".source", outputPath);
+    fs.rmSync(outputPath + ".source", { force: true });
+}
+
+function convertToWav(inputPath, outputPath) {
+    return new Promise((resolve, reject) => {
+        const child = spawn(process.env.FFMPEG_BIN || "ffmpeg", [
+            "-y", "-i", inputPath, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", outputPath
+        ], { stdio: ["ignore", "ignore", "pipe"] });
+        let stderr = "";
+        child.stderr.on("data", data => {
+            stderr += data.toString();
+            if (stderr.length > 8000) stderr = stderr.slice(-8000);
+        });
+        child.on("error", () => reject(new Error("FFmpeg could not be started. Install FFmpeg and make sure it is on PATH.")));
+        child.on("close", code => code === 0 ? resolve() : reject(new Error(stderr.trim() || "FFmpeg audio conversion failed.")));
+    });
+}
+
 function runYtDlp(url, outputPath) {
     return new Promise((resolve, reject) => {
         const args = [
@@ -55,7 +131,14 @@ app.post("/api/media", async (req, res) => {
     const outputPath = path.join(tempDir, crypto.randomUUID() + ".wav");
 
     try {
-        await runYtDlp(url, outputPath);
+        const appleEpisode = await resolveApplePodcastsEpisode(url).catch(() => null);
+
+        if (appleEpisode) {
+            await downloadDirectAudio(appleEpisode.audioUrl, outputPath);
+        } else {
+            await runYtDlp(url, outputPath);
+        }
+
         const stat = fs.statSync(outputPath);
         if (!stat.size || stat.size > MAX_DOWNLOAD_BYTES) throw new Error("Downloaded media is empty or too large.");
 
