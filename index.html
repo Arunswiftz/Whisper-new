@@ -16,13 +16,27 @@
     </header>
 
     <section class="card">
-        <div id="dropZone" class="drop-zone">
+        <div class="source-section">
+            <div id="dropZone" class="drop-zone">
             <div class="upload-icon">↑</div>
             <h2>Drop an audio or video file here</h2>
             <p>or</p>
             <label for="audioFile" class="button secondary">Choose file</label>
             <input id="audioFile" type="file" accept="audio/*,video/*" hidden>
             <p class="supported">MP3 · WAV · M4A · FLAC · MP4</p>
+            </div>
+
+            <div class="source-divider"><span>OR</span></div>
+
+            <div class="url-source">
+                <label for="sourceUrl">Paste an online audio/video link</label>
+                <div class="url-row">
+                    <input id="sourceUrl" class="url-input" type="url" placeholder="https://youtube.com/watch?v=... or direct MP3/MP4 link" autocomplete="off">
+                    <button id="loadUrlButton" class="button secondary" type="button">Load link</button>
+                </div>
+                <p class="url-help">YouTube and many other supported sites require the optional server component. Direct media URLs may work without it when the host allows browser access.</p>
+                <div id="urlStatus" class="url-status hidden"></div>
+            </div>
         </div>
 
         <div id="fileInfo" class="file-info hidden">
