@@ -62,3 +62,45 @@ Whisper's word timestamp support is provided through `return_timestamps: "word"`
 ## Run
 
 This project is a static browser application. Serve the repository with any static web server or GitHub Pages and open `index.html` through the server.
+
+
+## Online audio/video links
+
+The web UI now has a **Paste an online audio/video link** option.
+
+There are two paths:
+
+1. **Direct media URL** — a URL that points directly to an MP3, WAV, MP4, WebM, etc. can be fetched by the browser when the host permits CORS.
+2. **Media-page URL** — YouTube and many other supported sites need the included Node.js media bridge. The bridge uses `yt-dlp` + FFmpeg to resolve the page URL, extract/convert the audio to WAV, and return that file to the browser. Whisper then processes the returned file exactly like an uploaded file.
+
+### Run locally with online-link support
+
+Requirements:
+- Node.js 20+
+- FFmpeg
+- Python 3 + yt-dlp
+
+Then:
+
+    npm install
+    yt-dlp --version
+    ffmpeg -version
+    npm start
+
+Open `http://localhost:3000`.
+
+The included `Dockerfile` installs Node, FFmpeg and yt-dlp automatically for a container deployment.
+
+### Important architecture note
+
+The Whisper inference remains **in the browser**. The media bridge is only used to retrieve/convert online media. A static GitHub Pages deployment cannot itself run `server.js`, so YouTube/media-page URLs will require the Node service to be deployed separately (or the whole application deployed with the included Dockerfile).
+
+The phrase "any link" means any public HTTP/HTTPS URL that either:
+- is a browser-accessible direct media file, or
+- is supported by the installed version of yt-dlp.
+
+Private/authenticated media, DRM-protected streams, links requiring a login, and sites that block automated retrieval may not work.
+
+### Security
+
+The media endpoint accepts only HTTP/HTTPS URLs and rejects obvious localhost/private metadata targets. If this service is exposed publicly, add authentication/rate limiting and stronger outbound-network/SSRF controls before production use.
