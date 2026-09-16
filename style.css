@@ -183,3 +183,17 @@ footer p { margin: 5px 0; }
     .actions { flex-direction: column; }
     h1 { font-size: 29px; }
 }
+
+
+.source-section { margin-bottom: 2px; }
+.source-divider { display:flex; align-items:center; gap:12px; margin:18px 0; color:var(--muted); font-size:10px; font-weight:800; letter-spacing:.12em; }
+.source-divider::before, .source-divider::after { content:""; height:1px; flex:1; background:var(--border); }
+.url-source { padding:2px 1px 0; }
+.url-source label { display:block; margin-bottom:7px; color:#4f5762; font-size:13px; font-weight:600; }
+.url-row { display:flex; gap:9px; }
+.url-input { flex:1; min-width:0; padding:11px 12px; border:1px solid var(--border); border-radius:9px; background:#fff; color:var(--text); outline:none; }
+.url-input:focus { border-color:#9ca3af; }
+.url-help { margin:8px 0 0; color:var(--muted); font-size:11px; line-height:1.5; }
+.url-status { margin-top:9px; padding:9px 11px; border-radius:8px; background:var(--surface-soft); color:var(--muted); font-size:12px; }
+.url-status.error { color:#9a2e2e; background:#fff4f4; }
+@media (max-width:720px) { .url-row { flex-direction:column; } .url-row .button { width:100%; } }
