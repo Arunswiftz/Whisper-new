@@ -56,6 +56,10 @@ const sensitivitySelect = $("sensitivity");
 const mediaPreview = $("mediaPreview");
 const audioPreview = $("audioPreview");
 const videoPreview = $("videoPreview");
+const sourceUrl = $("sourceUrl");
+const loadUrlButton = $("loadUrlButton");
+const urlStatus = $("urlStatus");
+let sourceType = "file";
 
 let selectedFile = null;
 let mediaObjectUrl = null;
@@ -106,8 +110,15 @@ function cleanText(text) {
         .trim();
 }
 
-function selectFile(file) {
+function setUrlStatus(message, isError = false) {
+    urlStatus.textContent = message;
+    urlStatus.classList.toggle("hidden", !message);
+    urlStatus.classList.toggle("error", isError);
+}
+
+function selectFile(file, type = "file") {
     selectedFile = file;
+    sourceType = type;
     transcriptionData = [];
     fileName.textContent = file.name;
     fileSize.textContent = formatFileSize(file.size);
@@ -154,7 +165,11 @@ function removeSelectedFile() {
 }
 
 audioFile.addEventListener("change", e => {
-    if (e.target.files[0]) selectFile(e.target.files[0]);
+    if (e.target.files[0]) {
+        sourceUrl.value = "";
+        setUrlStatus("");
+        selectFile(e.target.files[0], "file");
+    }
 });
 removeFile.addEventListener("click", removeSelectedFile);
 
@@ -166,7 +181,96 @@ dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragging
 dropZone.addEventListener("drop", e => {
     e.preventDefault();
     dropZone.classList.remove("dragging");
-    if (e.dataTransfer.files[0]) selectFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files[0]) {
+        sourceUrl.value = "";
+        setUrlStatus("");
+        selectFile(e.dataTransfer.files[0], "file");
+    }
+});
+
+async function loadOnlineMedia() {
+    const rawUrl = sourceUrl.value.trim();
+
+    if (!rawUrl) {
+        setUrlStatus("Paste an audio, video, or supported media-page URL first.", true);
+        return;
+    }
+
+    let parsed;
+    try {
+        parsed = new URL(rawUrl);
+        if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("Only HTTP and HTTPS links are supported.");
+    } catch (error) {
+        setUrlStatus(error.message || "Please enter a valid HTTP/HTTPS URL.", true);
+        return;
+    }
+
+    loadUrlButton.disabled = true;
+    transcribeButton.disabled = true;
+    setUrlStatus("Fetching media and converting it to a browser-compatible audio file...");
+
+    try {
+        const response = await fetch("/api/media", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: parsed.href })
+        });
+
+        if (!response.ok) {
+            let message = "The online media server could not process this link.";
+            try {
+                const data = await response.json();
+                if (data?.error) message = data.error;
+            } catch {}
+            if (response.status === 404) {
+                message = "Online-link server is not configured. Direct media URLs can be tried from a CORS-enabled host.";
+            }
+            throw new Error(message);
+        }
+
+        const blob = await response.blob();
+        if (!blob.size) throw new Error("The server returned an empty media file.");
+
+        const contentType = blob.type || "audio/wav";
+        const pathname = parsed.pathname.toLowerCase();
+        const extension = contentType.includes("mp4") || pathname.endsWith(".mp4") ? ".mp4" : ".wav";
+        const safeName = (parsed.hostname || "online-media").replace(/[^a-z0-9.-]/gi, "_") + "_audio" + extension;
+        const file = new File([blob], safeName, { type: contentType });
+
+        selectFile(file, "url");
+        setUrlStatus("Media loaded successfully. It is now ready for local Whisper transcription.");
+    } catch (error) {
+        // A direct media URL may allow CORS and can be fetched without the server.
+        // This fallback does not work for most YouTube/media-page URLs.
+        try {
+            setUrlStatus("Trying direct browser access to the link...");
+            const direct = await fetch(parsed.href, { mode: "cors" });
+            if (!direct.ok) throw new Error("Direct media request returned HTTP " + direct.status + ".");
+            const type = direct.headers.get("content-type") || "";
+            if (!type.startsWith("audio/") && !type.startsWith("video/") && !type.includes("application/octet-stream")) {
+                throw new Error("This URL is a webpage rather than a directly accessible media file.");
+            }
+            const blob = await direct.blob();
+            const extension = type.includes("mpeg") ? ".mp3" : type.includes("mp4") ? ".mp4" : ".wav";
+            const file = new File([blob], "online-media" + extension, { type: type || "application/octet-stream" });
+            selectFile(file, "url");
+            setUrlStatus("Direct media loaded. Ready for transcription.");
+        } catch (directError) {
+            console.error("ONLINE MEDIA ERROR:", error, directError);
+            setUrlStatus(
+                "Could not load this link. YouTube and most media-page URLs need the Node/yt-dlp server component; direct media files must also allow CORS.",
+                true
+            );
+        }
+    } finally {
+        loadUrlButton.disabled = false;
+        transcribeButton.disabled = !selectedFile;
+    }
+}
+
+loadUrlButton.addEventListener("click", loadOnlineMedia);
+sourceUrl.addEventListener("keydown", event => {
+    if (event.key === "Enter") loadOnlineMedia();
 });
 
 async function loadModels() {
